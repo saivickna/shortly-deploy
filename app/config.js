@@ -1,40 +1,50 @@
-var path = require('path');
-var knex = require('knex')({
-  client: 'sqlite3',
-  connection: {
-    filename: path.join(__dirname, '../db/shortly.sqlite')
-  },
-  useNullAsDefault: true
-});
-var db = require('bookshelf')(knex);
+var mongoose = require('mongoose');
+var crypto = require('crypto');
+var bcrypt = require('bcrypt-nodejs');
+var Promise = require('bluebird');
+mongoose.connect('mongodb://localhost:27017/test');
 
-db.knex.schema.hasTable('urls').then(function(exists) {
-  if (!exists) {
-    db.knex.schema.createTable('urls', function (link) {
-      link.increments('id').primary();
-      link.string('url', 255);
-      link.string('baseUrl', 255);
-      link.string('code', 100);
-      link.string('title', 255);
-      link.integer('visits');
-      link.timestamps();
-    }).then(function (table) {
-      console.log('Created Table', table);
-    });
-  }
+var Schema = mongoose.Schema;
+
+var links = new Schema({
+  url: String,
+  baseUrl: String,
+  code: String,
+  title: String,
+  visits: {type: Number, default: 0},
+  timestamps: {type: Date, default: Date.now }
 });
 
-db.knex.schema.hasTable('users').then(function(exists) {
-  if (!exists) {
-    db.knex.schema.createTable('users', function (user) {
-      user.increments('id').primary();
-      user.string('username', 100).unique();
-      user.string('password', 100);
-      user.timestamps();
-    }).then(function (table) {
-      console.log('Created Table', table);
-    });
-  }
+links.post('init', function(data) {
+  var shasum = crypto.createHash('sha1');
+  shasum.update(data.url);
+  data.code = shasum.digest('hex').slice(0, 5);
+  this.save();
+  //next();
 });
 
-module.exports = db;
+links.post('validate', function(data) {
+  var shasum = crypto.createHash('sha1');
+  shasum.update(data.url);
+  data.code = shasum.digest('hex').slice(0, 5);
+
+  //next();
+});
+
+var users = new Schema({
+  username: String,
+  password: String,
+  timestamps: {type: Date, default: Date.now}
+});
+
+users.post('init', function(data) {
+  var cipher = Promise.promisify(bcrypt.hash);
+  cipher(data.password, null, null).bind(this)
+      .then(function(hash) {
+        data.password = hash;
+      });
+  //next();
+});
+
+module.exports.links = links;
+module.exports.users = users;
